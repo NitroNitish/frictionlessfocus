@@ -1,6 +1,6 @@
 import { Task, TimerState, StreakData, ResistanceLevel, RESISTANCE_DURATION_MAP } from '@/lib/types';
 import { ResistanceSelector } from './ResistanceSelector';
-import { Zap, Flame, ArrowUpRight } from 'lucide-react';
+import { Zap, Flame, ArrowUpRight, ArrowLeft } from 'lucide-react';
 import { computeAnalytics } from '@/lib/engine';
 
 interface FocusScreenProps {
@@ -11,6 +11,7 @@ interface FocusScreenProps {
   streakData: StreakData;
   onAddTask: (title: string, subject?: string) => void;
   onSelectTask: (id: string) => void;
+  onDeselectTask: () => void;
   onSetResistance: (level: ResistanceLevel) => void;
   onStart: () => void;
 }
@@ -30,10 +31,11 @@ export function FocusScreen({
   streakData,
   onAddTask,
   onSelectTask,
+  onDeselectTask,
   onSetResistance,
   onStart,
 }: FocusScreenProps) {
-  const stats = computeAnalytics(tasks);
+  const stats = computeAnalytics(tasks, 'day');
   const activeTasks = tasks.filter(t => t.status === 'active');
   const sessionDuration = selectedTask
     ? selectedTask.currentSessionDuration
@@ -81,9 +83,20 @@ export function FocusScreen({
 
       {/* Target Resistance Card - Task Input */}
       <div className="rounded-2xl border border-border bg-card p-5">
-        <h3 className="font-mono text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-3">
-          The Target Resistance
-        </h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-mono text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+            The Target Resistance
+          </h3>
+          {selectedTask && (
+            <button
+              onClick={onDeselectTask}
+              className="flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs font-mono text-muted-foreground hover:text-card-foreground hover:border-muted-foreground/50 transition-colors"
+            >
+              <ArrowLeft className="h-3 w-3" />
+              Back
+            </button>
+          )}
+        </div>
         {!selectedTask ? (
           <textarea
             placeholder="What are you avoiding?"

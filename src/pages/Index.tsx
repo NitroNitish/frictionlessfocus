@@ -3,6 +3,7 @@ import { FocusScreen } from '@/components/FocusScreen';
 import { TimerDisplay } from '@/components/TimerDisplay';
 import { SessionModal } from '@/components/SessionModal';
 import { AnalyticsPanel } from '@/components/AnalyticsPanel';
+import { ProfileSection } from '@/components/ProfileSection';
 import { useState } from 'react';
 import { LayoutGrid, BarChart3, Clock, User } from 'lucide-react';
 
@@ -83,6 +84,7 @@ const Index = () => {
             streakData={friction.streakData}
             onAddTask={friction.addTask}
             onSelectTask={friction.selectTask}
+            onDeselectTask={friction.deselectTask}
             onSetResistance={friction.setResistance}
             onStart={friction.startSession}
           />
@@ -120,27 +122,7 @@ const Index = () => {
           </div>
         )}
         {activeTab === 'profile' && (
-          <div className="flex flex-col items-center justify-center p-5 pt-20">
-            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-card border border-border">
-              <User className="h-10 w-10 text-muted-foreground" />
-            </div>
-            <h2 className="mt-4 text-lg font-bold text-card-foreground">Friction User</h2>
-            <p className="text-sm text-muted-foreground">Lime Edition</p>
-            <div className="mt-6 grid grid-cols-3 gap-4 text-center">
-              <div className="rounded-xl border border-border bg-card p-4">
-                <p className="font-mono text-2xl font-bold text-card-foreground">{friction.streakData.currentStreak}</p>
-                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Streak</p>
-              </div>
-              <div className="rounded-xl border border-border bg-card p-4">
-                <p className="font-mono text-2xl font-bold text-card-foreground">{friction.tasks.filter(t => t.status === 'active').length}</p>
-                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Active</p>
-              </div>
-              <div className="rounded-xl border border-border bg-card p-4">
-                <p className="font-mono text-2xl font-bold text-card-foreground">{friction.tasks.filter(t => t.status === 'completed').length}</p>
-                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Done</p>
-              </div>
-            </div>
-          </div>
+          <ProfileSection streakData={friction.streakData} tasks={friction.tasks} />
         )}
       </main>
 

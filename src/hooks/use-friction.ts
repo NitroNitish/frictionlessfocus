@@ -113,6 +113,11 @@ export function useFriction() {
     setSelectedTaskId(id);
   }, [timerState.isRunning]);
 
+  const deselectTask = useCallback(() => {
+    if (timerState.isRunning) return;
+    setSelectedTaskId(null);
+  }, [timerState.isRunning]);
+
   const setResistance = useCallback((level: ResistanceLevel) => {
     if (!selectedTaskId || timerState.isRunning) return;
     setTasks((prev) =>
@@ -200,6 +205,7 @@ export function useFriction() {
     deleteTask,
     completeTask,
     selectTask,
+    deselectTask,
     setResistance,
     startSession,
     pauseSession,
