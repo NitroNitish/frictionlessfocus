@@ -56,27 +56,46 @@ export function getAdaptiveMessage(task: Task): string | null {
   return null;
 }
 
-export function computeAnalytics(tasks: Task[]) {
+export type AnalyticsPeriod = 'day' | 'week' | 'month';
+
+export function computeAnalytics(tasks: Task[], period: AnalyticsPeriod = 'week') {
   const now = new Date();
-  const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  let periodStart: Date;
+  let periodDays: number;
+
+  switch (period) {
+    case 'day':
+      periodStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      periodDays = 1;
+      break;
+    case 'month':
+      periodStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      periodDays = 30;
+      break;
+    case 'week':
+    default:
+      periodStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      periodDays = 7;
+      break;
+  }
 
   const allSessions = tasks.flatMap((t) =>
     t.sessionHistory.map((s) => ({ ...s, taskId: t.id, taskTitle: t.title }))
   );
 
-  const weeklySessions = allSessions.filter(
-    (s) => new Date(s.date) >= weekAgo
+  const periodSessions = allSessions.filter(
+    (s) => new Date(s.date) >= periodStart
   );
 
-  const completedWeekly = weeklySessions.filter(
+  const completedPeriod = periodSessions.filter(
     (s) => s.quitReason === 'completed'
   );
   const disciplineScore =
-    weeklySessions.length > 0
-      ? Math.round((completedWeekly.length / weeklySessions.length) * 100)
+    periodSessions.length > 0
+      ? Math.round((completedPeriod.length / periodSessions.length) * 100)
       : 0;
 
-  const quitSessions = weeklySessions.filter(
+  const quitSessions = periodSessions.filter(
     (s) => s.quitReason && s.quitReason !== 'completed'
   );
   const avgQuitTime =
@@ -101,14 +120,15 @@ export function computeAnalytics(tasks: Task[]) {
     (a, b) => b.count - a.count
   )[0];
 
-  const totalFocusMinutes = weeklySessions.reduce(
+  const totalFocusMinutes = periodSessions.reduce(
     (sum, s) => sum + s.actualDuration,
     0
   );
 
-  // Resistance trend (last 7 days)
+  // Resistance trend
+  const trendDays = Math.min(periodDays, 30);
   const resistanceTrend: { date: string; avg: number }[] = [];
-  for (let i = 6; i >= 0; i--) {
+  for (let i = trendDays - 1; i >= 0; i--) {
     const day = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
     const dayStr = day.toISOString().split('T')[0];
     const daySessions = allSessions.filter(
@@ -129,8 +149,8 @@ export function computeAnalytics(tasks: Task[]) {
     mostAvoidedCount: mostAvoided?.count || 0,
     totalFocusMinutes,
     resistanceTrend,
-    totalSessions: weeklySessions.length,
-    completedSessions: completedWeekly.length,
+    totalSessions: periodSessions.length,
+    completedSessions: completedPeriod.length,
   };
 }
 
