@@ -85,6 +85,7 @@ const Index = () => {
             onAddTask={friction.addTask}
             onSelectTask={friction.selectTask}
             onDeselectTask={friction.deselectTask}
+            onDeleteTask={friction.deleteTask}
             onSetResistance={friction.setResistance}
             onStart={friction.startSession}
           />

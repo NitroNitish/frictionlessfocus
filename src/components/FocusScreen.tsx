@@ -1,6 +1,6 @@
 import { Task, TimerState, StreakData, ResistanceLevel, RESISTANCE_DURATION_MAP } from '@/lib/types';
 import { ResistanceSelector } from './ResistanceSelector';
-import { Zap, Flame, ArrowUpRight, ArrowLeft } from 'lucide-react';
+import { Zap, Flame, ArrowUpRight, ArrowLeft, Trash2 } from 'lucide-react';
 import { computeAnalytics } from '@/lib/engine';
 
 interface FocusScreenProps {
@@ -12,6 +12,7 @@ interface FocusScreenProps {
   onAddTask: (title: string, subject?: string) => void;
   onSelectTask: (id: string) => void;
   onDeselectTask: () => void;
+  onDeleteTask: (id: string) => void;
   onSetResistance: (level: ResistanceLevel) => void;
   onStart: () => void;
 }
@@ -32,6 +33,7 @@ export function FocusScreen({
   onAddTask,
   onSelectTask,
   onDeselectTask,
+  onDeleteTask,
   onSetResistance,
   onStart,
 }: FocusScreenProps) {
@@ -63,10 +65,10 @@ export function FocusScreen({
             </div>
             <div>
               <h1 className="font-mono text-xl font-bold text-card-foreground tracking-tight">
-                FRICTION
+                FRICTIONLESS
               </h1>
               <p className="text-[10px] font-mono uppercase tracking-widest text-neon">
-                Lime Edition
+                Focus
               </p>
             </div>
           </div>
@@ -118,20 +120,31 @@ export function FocusScreen({
       {activeTasks.length > 0 && !selectedTask && (
         <div className="space-y-1.5">
           {activeTasks.slice(0, 4).map(task => (
-            <button
+            <div
               key={task.id}
-              onClick={() => onSelectTask(task.id)}
-              className={`w-full rounded-xl border p-3 text-left transition-all ${
+              className={`flex items-center justify-between rounded-xl border p-3 transition-all ${
                 selectedTaskId === task.id
                   ? 'border-neon/40 bg-neon/5'
                   : 'border-border bg-card hover:border-muted-foreground/30'
               }`}
             >
-              <span className="text-sm font-medium text-card-foreground">{task.title}</span>
-              {task.subject && (
-                <span className="ml-2 text-xs text-muted-foreground">{task.subject}</span>
-              )}
-            </button>
+              <button
+                onClick={() => onSelectTask(task.id)}
+                className="flex-1 text-left"
+              >
+                <span className="text-sm font-medium text-card-foreground">{task.title}</span>
+                {task.subject && (
+                  <span className="ml-2 text-xs text-muted-foreground">{task.subject}</span>
+                )}
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); onDeleteTask(task.id); }}
+                className="ml-2 rounded-lg p-1.5 text-muted-foreground hover:text-danger hover:bg-danger/10 transition-colors"
+                title="Delete task"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
           ))}
         </div>
       )}
