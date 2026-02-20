@@ -4,8 +4,9 @@ import { TimerDisplay } from '@/components/TimerDisplay';
 import { SessionModal } from '@/components/SessionModal';
 import { AnalyticsPanel } from '@/components/AnalyticsPanel';
 import { ProfileSection } from '@/components/ProfileSection';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { LayoutGrid, BarChart3, Clock, User } from 'lucide-react';
+import { checkPendingTasks, requestNotificationPermission } from '@/lib/notifications';
 
 type Tab = 'focus' | 'metrics' | 'history' | 'profile';
 
@@ -13,6 +14,13 @@ const Index = () => {
   const friction = useFriction();
   const [activeTab, setActiveTab] = useState<Tab>('focus');
   const [showQuitConfirm, setShowQuitConfirm] = useState(false);
+
+  useEffect(() => {
+    requestNotificationPermission();
+    if (friction.tasks.length > 0) {
+      checkPendingTasks(friction.tasks);
+    }
+  }, [friction.tasks]);
 
   const handleQuit = () => {
     if (friction.timerState.isRunning) {
@@ -138,9 +146,8 @@ const Index = () => {
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`flex flex-1 flex-col items-center gap-1 py-3 text-[10px] font-mono uppercase tracking-wider transition-colors ${
-              activeTab === tab ? 'text-neon' : 'text-muted-foreground'
-            }`}
+            className={`flex flex-1 flex-col items-center gap-1 py-3 text-[10px] font-mono uppercase tracking-wider transition-colors ${activeTab === tab ? 'text-neon' : 'text-muted-foreground'
+              }`}
           >
             <Icon className="h-5 w-5" />
             {label}
