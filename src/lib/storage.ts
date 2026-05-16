@@ -1,9 +1,10 @@
-import { AppState, StreakData, Task, TimerState } from './types';
+import { AppState, StreakData, Task, TimerState, UserProfile } from './types';
 
 const STORAGE_KEYS = {
   tasks: 'friction_tasks',
   streakData: 'friction_streak',
   timerState: 'friction_timer',
+  userProfile: 'friction_user_profile',
 } as const;
 
 const defaultStreakData: StreakData = {
@@ -19,6 +20,12 @@ const defaultTimerState: TimerState = {
   totalSeconds: 0,
   taskId: null,
   startedAt: null,
+};
+
+const defaultUserProfile: UserProfile = {
+  name: '',
+  goal: '',
+  isComplete: false,
 };
 
 function safeGet<T>(key: string, fallback: T): T {
@@ -44,6 +51,7 @@ export const storage = {
       tasks: safeGet<Task[]>(STORAGE_KEYS.tasks, []),
       streakData: safeGet<StreakData>(STORAGE_KEYS.streakData, defaultStreakData),
       timerState: safeGet<TimerState>(STORAGE_KEYS.timerState, defaultTimerState),
+      userProfile: safeGet<UserProfile>(STORAGE_KEYS.userProfile, defaultUserProfile),
     };
   },
 
@@ -57,5 +65,9 @@ export const storage = {
 
   saveTimerState(state: TimerState): void {
     safeSet(STORAGE_KEYS.timerState, state);
+  },
+
+  saveUserProfile(profile: UserProfile): void {
+    safeSet(STORAGE_KEYS.userProfile, profile);
   },
 };

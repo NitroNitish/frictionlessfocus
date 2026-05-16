@@ -8,6 +8,8 @@ import { useState, useEffect } from 'react';
 import { LayoutGrid, BarChart3, Clock, User } from 'lucide-react';
 import { checkPendingTasks, requestNotificationPermission } from '@/lib/notifications';
 
+import { Onboarding } from '@/components/Onboarding';
+
 type Tab = 'focus' | 'metrics' | 'history' | 'profile';
 
 const Index = () => {
@@ -32,6 +34,10 @@ const Index = () => {
     setShowQuitConfirm(false);
     friction.quitSession();
   };
+
+  if (!friction.userProfile.isComplete) {
+    return <Onboarding onComplete={friction.setUserProfile} />;
+  }
 
   // When timer is running, show the timer screen
   if (friction.timerState.isRunning) {
@@ -96,6 +102,7 @@ const Index = () => {
             onDeleteTask={friction.deleteTask}
             onSetResistance={friction.setResistance}
             onStart={friction.startSession}
+            onStartWithText={friction.startWithText}
           />
         )}
         {activeTab === 'metrics' && (

@@ -5,13 +5,20 @@ import {
   TimerState,
   ResistanceLevel,
   QuitReason,
-  SessionLog,
   RESISTANCE_DURATION_MAP,
+  UserProfile,
 } from '@/lib/types';
 import { storage } from '@/lib/storage';
 import { applyAdaptiveLogic, updateStreak } from '@/lib/engine';
-import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
+
+// Simple UUID generator (crypto.randomUUID with fallback)
+function generateId(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
 
 export function useFriction() {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -31,90 +38,21 @@ export function useFriction() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [showSessionModal, setShowSessionModal] = useState(false);
   const [sessionEndType, setSessionEndType] = useState<'completed' | 'quit'>('completed');
-  const [user, setUser] = useState<any>(null);
+  const [userProfile, setUserProfileState] = useState<UserProfile>({
+    name: '',
+    goal: '',
+    isComplete: false,
+  });
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Auth & Initial Load
-  useEffect(() => {
-    const init = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setUser(session?.user || null);
-
-      if (session?.user) {
-        await fetchUserData(session.user.id);
-      }
-    };
-
-    init();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user || null);
-      if (session?.user) {
-        fetchUserData(session.user.id);
-      } else {
-        setTasks([]);
-        setStreakData({ currentStreak: 0, longestStreak: 0, lastCompletionDate: null });
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const fetchUserData = async (userId: string) => {
-    try {
-      // Fetch profile for streaks
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
-
-      if (profile) {
-        setStreakData({
-          currentStreak: profile.current_streak,
-          longestStreak: profile.longest_streak,
-          lastCompletionDate: profile.last_completion_date,
-        });
-      }
-
-      // Fetch tasks and their history
-      const { data: tasksData, error } = await supabase
-        .from('tasks')
-        .select('*, session_history(*)')
-        .eq('user_id', userId);
-
-      if (error) throw error;
-
-      if (tasksData) {
-        const formattedTasks: Task[] = tasksData.map(t => ({
-          id: t.id,
-          title: t.title,
-          subject: t.subject,
-          resistanceLevel: t.resistance_level as ResistanceLevel,
-          status: t.status as 'active' | 'completed',
-          sessionHistory: t.session_history.map((s: any) => ({
-            date: s.date,
-            plannedDuration: s.planned_duration,
-            actualDuration: s.actual_duration,
-            quitReason: s.quit_reason as QuitReason,
-            resistanceLevel: t.resistance_level as ResistanceLevel
-          })),
-          createdAt: t.created_at,
-          currentSessionDuration: t.current_session_duration,
-          consecutiveCompletions: t.consecutive_completions,
-          consecutiveQuits: t.consecutive_quits,
-          deepMode: t.deep_mode,
-        }));
-        setTasks(formattedTasks);
-      }
-    } catch (err) {
-      console.error('Error fetching data:', err);
-    }
-  };
-
-  // Restore timer from localStorage (still useful for session persistence across refreshes)
+  // Load all state from localStorage on mount
   useEffect(() => {
     const state = storage.loadState();
+    setTasks(state.tasks);
+    setStreakData(state.streakData);
+    setUserProfileState(state.userProfile);
+
+    // Restore timer (accounting for elapsed time while app was closed)
     if (state.timerState.isRunning && state.timerState.startedAt) {
       const elapsed = Math.floor((Date.now() - new Date(state.timerState.startedAt).getTime()) / 1000);
       const remaining = Math.max(0, state.timerState.remainingSeconds - elapsed);
@@ -130,12 +68,55 @@ export function useFriction() {
     }
   }, []);
 
-  // Persist timer state only
+  // Persist tasks whenever they change
+  useEffect(() => { storage.saveTasks(tasks); }, [tasks]);
+
+  // Persist streak data whenever it changes
+  useEffect(() => { storage.saveStreakData(streakData); }, [streakData]);
+
+  // Persist timer state whenever it changes
   useEffect(() => { storage.saveTimerState(timerState); }, [timerState]);
+
+  // Persist user profile whenever it changes
+  useEffect(() => { storage.saveUserProfile(userProfile); }, [userProfile]);
+
+  const setUserProfile = useCallback((profile: UserProfile) => {
+    setUserProfileState(profile);
+  }, []);
+
+  const startWithText = useCallback(async (title: string, resistance: ResistanceLevel) => {
+    const newTask: Task = {
+      id: generateId(),
+      title,
+      subject: undefined,
+      resistanceLevel: resistance,
+      status: 'active',
+      sessionHistory: [],
+      createdAt: new Date().toISOString(),
+      currentSessionDuration: RESISTANCE_DURATION_MAP[resistance],
+      consecutiveCompletions: 0,
+      consecutiveQuits: 0,
+      deepMode: false,
+    };
+    // Add task to state
+    setTasks(prev => [...prev, newTask]);
+    setSelectedTaskId(newTask.id);
+    // Start timer immediately
+    const durationSeconds = newTask.currentSessionDuration * 60;
+    setTimerState({
+      isRunning: true,
+      isPaused: false,
+      remainingSeconds: durationSeconds,
+      totalSeconds: durationSeconds,
+      taskId: newTask.id,
+      startedAt: new Date().toISOString(),
+    });
+  }, []);
 
   // Timer tick
   useEffect(() => {
     if (timerState.isRunning && !timerState.isPaused) {
+
       timerRef.current = setInterval(() => {
         setTimerState((prev) => {
           if (prev.remainingSeconds <= 1) {
@@ -154,62 +135,32 @@ export function useFriction() {
   }, [timerState.isRunning, timerState.isPaused]);
 
   const addTask = useCallback(async (title: string, subject?: string) => {
-    if (!user) return;
-    const newTask = {
-      user_id: user.id,
+    const newTask: Task = {
+      id: generateId(),
       title,
       subject,
-      resistance_level: 3,
-      current_session_duration: RESISTANCE_DURATION_MAP[3],
+      resistanceLevel: 3,
+      status: 'active',
+      sessionHistory: [],
+      createdAt: new Date().toISOString(),
+      currentSessionDuration: RESISTANCE_DURATION_MAP[3],
+      consecutiveCompletions: 0,
+      consecutiveQuits: 0,
+      deepMode: false,
     };
-
-    try {
-      const { data, error } = await supabase.from('tasks').insert(newTask).select().single();
-      if (error) throw error;
-
-      const formatted: Task = {
-        id: data.id,
-        title: data.title,
-        subject: data.subject,
-        resistanceLevel: data.resistance_level,
-        status: data.status,
-        sessionHistory: [],
-        createdAt: data.created_at,
-        currentSessionDuration: data.current_session_duration,
-        consecutiveCompletions: data.consecutive_completions,
-        consecutiveQuits: data.consecutive_quits,
-        deepMode: data.deep_mode,
-      };
-
-      setTasks(prev => [...prev, formatted]);
-      return formatted.id;
-    } catch (err) {
-      toast.error('Failed to add task');
-      console.error(err);
-    }
-  }, [user]);
+    setTasks(prev => [...prev, newTask]);
+    return newTask.id;
+  }, []);
 
   const deleteTask = useCallback(async (id: string) => {
     if (timerState.isRunning && timerState.taskId === id) return;
-    try {
-      const { error } = await supabase.from('tasks').delete().eq('id', id);
-      if (error) throw error;
-      setTasks((prev) => prev.filter((t) => t.id !== id));
-      if (selectedTaskId === id) setSelectedTaskId(null);
-    } catch (err) {
-      toast.error('Failed to delete task');
-    }
+    setTasks((prev) => prev.filter((t) => t.id !== id));
+    if (selectedTaskId === id) setSelectedTaskId(null);
   }, [timerState.isRunning, timerState.taskId, selectedTaskId]);
 
   const completeTask = useCallback(async (id: string) => {
-    try {
-      const { error } = await supabase.from('tasks').update({ status: 'completed' }).eq('id', id);
-      if (error) throw error;
-      setTasks((prev) => prev.map((t) => t.id === id ? { ...t, status: 'completed' } : t));
-      if (selectedTaskId === id) setSelectedTaskId(null);
-    } catch (err) {
-      toast.error('Failed to complete task');
-    }
+    setTasks((prev) => prev.map((t) => t.id === id ? { ...t, status: 'completed' } : t));
+    if (selectedTaskId === id) setSelectedTaskId(null);
   }, [selectedTaskId]);
 
   const selectTask = useCallback((id: string) => {
@@ -224,25 +175,14 @@ export function useFriction() {
 
   const setResistance = useCallback(async (level: ResistanceLevel) => {
     if (!selectedTaskId || timerState.isRunning) return;
-    try {
-      const duration = RESISTANCE_DURATION_MAP[level];
-      const { error } = await supabase.from('tasks').update({
-        resistance_level: level,
-        current_session_duration: duration
-      }).eq('id', selectedTaskId);
-
-      if (error) throw error;
-
-      setTasks((prev) =>
-        prev.map((t) =>
-          t.id === selectedTaskId
-            ? { ...t, resistanceLevel: level, currentSessionDuration: duration }
-            : t
-        )
-      );
-    } catch (err) {
-      toast.error('Failed to update resistance');
-    }
+    const duration = RESISTANCE_DURATION_MAP[level];
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === selectedTaskId
+          ? { ...t, resistanceLevel: level, currentSessionDuration: duration }
+          : t
+      )
+    );
   }, [selectedTaskId, timerState.isRunning]);
 
   const startSession = useCallback(() => {
@@ -272,7 +212,7 @@ export function useFriction() {
   }, []);
 
   const logSession = useCallback(async (reason: QuitReason) => {
-    if (!timerState.taskId || !user) return;
+    if (!timerState.taskId) return;
     const task = tasks.find((t) => t.id === timerState.taskId);
     if (!task) return;
 
@@ -280,71 +220,35 @@ export function useFriction() {
     const actualMinutes = Math.round(actualSeconds / 60);
     const isCompleted = reason === 'completed';
 
-    try {
-      // 1. Log session
-      const { error: sessionError } = await supabase.from('session_history').insert({
-        task_id: task.id,
-        planned_duration: Math.round(timerState.totalSeconds / 60),
-        actual_duration: actualMinutes,
-        quit_reason: reason,
-      });
+    const newLog = {
+      date: new Date().toISOString(),
+      plannedDuration: Math.round(timerState.totalSeconds / 60),
+      actualDuration: actualMinutes,
+      quitReason: reason,
+      resistanceLevel: task.resistanceLevel,
+    };
 
-      if (sessionError) throw sessionError;
+    const updatedTaskData = applyAdaptiveLogic(
+      { ...task, sessionHistory: [...task.sessionHistory, newLog] },
+      isCompleted
+    );
 
-      // 2. Update task logic
-      const updatedTaskData = applyAdaptiveLogic(
-        {
-          ...task, sessionHistory: [...task.sessionHistory, {
-            date: new Date().toISOString(),
-            plannedDuration: Math.round(timerState.totalSeconds / 60),
-            actualDuration: actualMinutes,
-            quitReason: reason,
-            resistanceLevel: task.resistanceLevel
-          }]
-        },
-        isCompleted
-      );
+    const newStreak = updateStreak(streakData, isCompleted);
 
-      const { error: taskError } = await supabase.from('tasks').update({
-        current_session_duration: updatedTaskData.currentSessionDuration,
-        consecutive_completions: updatedTaskData.consecutiveCompletions,
-        consecutive_quits: updatedTaskData.consecutiveQuits,
-        deep_mode: updatedTaskData.deepMode,
-      }).eq('id', task.id);
+    setTasks((prev) => prev.map((t) => (t.id === timerState.taskId ? updatedTaskData : t)));
+    setStreakData(newStreak);
+    setTimerState({
+      isRunning: false,
+      isPaused: false,
+      remainingSeconds: 0,
+      totalSeconds: 0,
+      taskId: null,
+      startedAt: null,
+    });
+    setShowSessionModal(false);
 
-      if (taskError) throw taskError;
-
-      // 3. Update profile streaks
-      const newStreak = updateStreak(streakData, isCompleted);
-      const { error: profileError } = await supabase.from('profiles').update({
-        current_streak: newStreak.currentStreak,
-        longest_streak: newStreak.longestStreak,
-        last_completion_date: newStreak.lastCompletionDate,
-      }).eq('id', user.id);
-
-      if (profileError) throw profileError;
-
-      // Update local state
-      setTasks((prev) => prev.map((t) => (t.id === timerState.taskId ? updatedTaskData : t)));
-      setStreakData(newStreak);
-      setTimerState({
-        isRunning: false,
-        isPaused: false,
-        remainingSeconds: 0,
-        totalSeconds: 0,
-        taskId: null,
-        startedAt: null,
-      });
-      setShowSessionModal(false);
-    } catch (err) {
-      toast.error('Failed to log session');
-      console.error(err);
-    }
-  }, [timerState, tasks, user, streakData]);
-
-  const logout = async () => {
-    await supabase.auth.signOut();
-  };
+    toast.success(isCompleted ? 'Session completed! 🎉' : 'Session logged.');
+  }, [timerState, tasks, streakData]);
 
   const selectedTask = tasks.find((t) => t.id === selectedTaskId) || null;
 
@@ -363,10 +267,12 @@ export function useFriction() {
     deselectTask,
     setResistance,
     startSession,
+    startWithText,
     pauseSession,
     quitSession,
     logSession,
     setShowSessionModal,
-    logout,
+    userProfile,
+    setUserProfile,
   };
 }

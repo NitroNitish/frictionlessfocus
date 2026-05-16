@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { Task, TimerState, StreakData, ResistanceLevel, RESISTANCE_DURATION_MAP } from '@/lib/types';
 import { ResistanceSelector } from './ResistanceSelector';
-import { Zap, Flame, ArrowUpRight, ArrowLeft, Trash2 } from 'lucide-react';
+import { Zap, Flame, Trash2 } from 'lucide-react';
 import { computeAnalytics } from '@/lib/engine';
 
 interface FocusScreenProps {
@@ -9,12 +10,13 @@ interface FocusScreenProps {
   selectedTaskId: string | null;
   timerState: TimerState;
   streakData: StreakData;
-  onAddTask: (title: string, subject?: string) => void;
+  onAddTask: (title: string, subject?: string) => Promise<string | undefined>;
   onSelectTask: (id: string) => void;
   onDeselectTask: () => void;
   onDeleteTask: (id: string) => void;
   onSetResistance: (level: ResistanceLevel) => void;
   onStart: () => void;
+  onStartWithText: (title: string, resistance: ResistanceLevel) => void;
 }
 
 const quotes = [
@@ -36,21 +38,39 @@ export function FocusScreen({
   onDeleteTask,
   onSetResistance,
   onStart,
+  onStartWithText,
 }: FocusScreenProps) {
+  const [inputValue, setInputValue] = useState('');
+  const [localResistance, setLocalResistance] = useState<ResistanceLevel>(3);
+
   const stats = computeAnalytics(tasks, 'day');
   const activeTasks = tasks.filter(t => t.status === 'active');
+
+  // Determine the session duration to display
   const sessionDuration = selectedTask
     ? selectedTask.currentSessionDuration
-    : 25;
+    : RESISTANCE_DURATION_MAP[localResistance];
 
-  const handleTaskInput = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      const value = (e.target as HTMLTextAreaElement).value.trim();
-      if (value) {
-        const id = onAddTask(value);
-        (e.target as HTMLTextAreaElement).value = '';
-      }
+  // User is currently composing a new task via the text area
+  const isTyping = inputValue.trim().length > 0;
+
+  // Can start if either: typing new text, or an existing task is selected
+  const canStart = isTyping || !!selectedTask;
+
+  const handleStart = () => {
+    if (isTyping) {
+      // Create task inline and start immediately
+      onStartWithText(inputValue.trim(), localResistance);
+      setInputValue('');
+    } else if (selectedTask) {
+      onStart();
+    }
+  };
+
+  const handleResistanceChange = (level: ResistanceLevel) => {
+    setLocalResistance(level);
+    if (selectedTask) {
+      onSetResistance(level);
     }
   };
 
@@ -65,10 +85,10 @@ export function FocusScreen({
             </div>
             <div>
               <h1 className="font-mono text-xl font-bold text-card-foreground tracking-tight">
-                FRICTIONLESS
+                FRICTION
               </h1>
               <p className="text-[10px] font-mono uppercase tracking-widest text-neon">
-                Focus
+                Lime Edition
               </p>
             </div>
           </div>
@@ -83,42 +103,87 @@ export function FocusScreen({
         </div>
       </header>
 
-      {/* Target Resistance Card - Task Input */}
+      {/* Target Resistance Card */}
       <div className="rounded-2xl border border-border bg-card p-5">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-mono text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-            The Target Resistance
-          </h3>
-          {selectedTask && (
+        <h3 className="font-mono text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-3">
+          The Target Resistance
+        </h3>
+
+        {/* If a saved task is selected, show it with a deselect option */}
+        {selectedTask && !isTyping ? (
+          <div>
+            <p className="text-xl font-medium text-card-foreground mb-1">{selectedTask.title}</p>
             <button
               onClick={onDeselectTask}
-              className="flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs font-mono text-muted-foreground hover:text-card-foreground hover:border-muted-foreground/50 transition-colors"
+              className="text-xs font-mono text-muted-foreground underline hover:text-card-foreground transition-colors"
             >
-              <ArrowLeft className="h-3 w-3" />
-              Back
+              Change task
             </button>
-          )}
-        </div>
-        {!selectedTask ? (
-          <textarea
-            placeholder="What are you avoiding?"
-            className="w-full resize-none bg-transparent text-xl font-medium text-card-foreground placeholder:text-muted-foreground/40 outline-none min-h-[80px]"
-            onKeyDown={handleTaskInput}
-          />
+          </div>
         ) : (
-          <p className="text-xl font-medium text-card-foreground mb-2">{selectedTask.title}</p>
+          <textarea
+            value={inputValue}
+            onChange={e => {
+              setInputValue(e.target.value);
+              // If user starts typing, deselect any previously selected task
+              if (e.target.value && selectedTask) onDeselectTask();
+            }}
+            placeholder="What are you avoiding?"
+            rows={2}
+            className="w-full resize-none bg-transparent text-xl font-medium text-card-foreground placeholder:text-muted-foreground/40 outline-none"
+          />
         )}
+
         <div className="mt-3 border-t border-border pt-3 flex items-center justify-between">
           <p className="text-xs text-muted-foreground italic">
-            {selectedTask ? 'Task selected. Set your resistance.' : 'Identify the friction to dissolve it.'}
+            {canStart ? 'Set your resistance, then start.' : 'Identify the friction to dissolve it.'}
           </p>
-          <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
         </div>
       </div>
 
-      {/* Active tasks quick-select */}
-      {activeTasks.length > 0 && !selectedTask && (
+      {/* Resistance Intensity — always visible */}
+      <ResistanceSelector
+        value={selectedTask ? selectedTask.resistanceLevel : localResistance}
+        onChange={handleResistanceChange}
+        disabled={timerState.isRunning}
+      />
+
+      {/* Session Target + Daily Flow */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-2xl border border-border bg-card p-4">
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+            Session Target
+          </p>
+          <p className="mt-2 font-mono text-3xl font-bold text-card-foreground">
+            {sessionDuration}:00
+          </p>
+        </div>
+        <div className="rounded-2xl border border-border bg-card p-4">
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+            Daily Flow
+          </p>
+          <p className="mt-2 font-mono text-3xl font-bold text-card-foreground">
+            {(stats.totalFocusMinutes / 60).toFixed(1)}h
+          </p>
+        </div>
+      </div>
+
+      {/* Start Button */}
+      <button
+        onClick={handleStart}
+        disabled={!canStart}
+        className="flex w-full items-center justify-center gap-3 rounded-2xl bg-neon py-4 font-mono text-base font-bold uppercase tracking-wider text-primary-foreground transition-all hover:opacity-90 disabled:opacity-30 neon-glow"
+      >
+        <Zap className="h-5 w-5" />
+        Start Through Friction
+      </button>
+
+      {/* Saved task quick-select (only when not typing) */}
+      {!isTyping && activeTasks.length > 0 && (
         <div className="space-y-1.5">
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-widest text-muted-foreground px-1">
+            Recent Tasks
+          </p>
           {activeTasks.slice(0, 4).map(task => (
             <div
               key={task.id}
@@ -149,47 +214,8 @@ export function FocusScreen({
         </div>
       )}
 
-      {/* Resistance Intensity Slider */}
-      {selectedTask && (
-        <ResistanceSelector
-          value={selectedTask.resistanceLevel}
-          onChange={onSetResistance}
-          disabled={timerState.isRunning}
-        />
-      )}
-
-      {/* Session Target + Daily Flow */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-2xl border border-border bg-card p-4">
-          <p className="font-mono text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-            Session Target
-          </p>
-          <p className="mt-2 font-mono text-3xl font-bold text-card-foreground">
-            {sessionDuration}:00
-          </p>
-        </div>
-        <div className="rounded-2xl border border-border bg-card p-4">
-          <p className="font-mono text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-            Daily Flow
-          </p>
-          <p className="mt-2 font-mono text-3xl font-bold text-card-foreground">
-            {(stats.totalFocusMinutes / 60).toFixed(1)}h
-          </p>
-        </div>
-      </div>
-
-      {/* Start Button */}
-      <button
-        onClick={onStart}
-        disabled={!selectedTask}
-        className="flex w-full items-center justify-center gap-3 rounded-2xl bg-neon py-4 font-mono text-base font-bold uppercase tracking-wider text-primary-foreground transition-all hover:opacity-90 disabled:opacity-30 neon-glow"
-      >
-        <Zap className="h-5 w-5" />
-        Start Through Friction
-      </button>
-
       {/* Quote */}
-      <p className="text-center text-xs italic text-muted-foreground px-4">
+      <p className="text-center text-xs italic text-muted-foreground px-4 pb-2">
         {quotes[Math.floor(Date.now() / 86400000) % quotes.length]}
       </p>
     </div>

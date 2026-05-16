@@ -43,10 +43,17 @@ export interface TimerState {
   startedAt: string | null;
 }
 
+export interface UserProfile {
+  name: string;
+  goal: string;
+  isComplete: boolean;
+}
+
 export interface AppState {
   tasks: Task[];
   streakData: StreakData;
   timerState: TimerState;
+  userProfile: UserProfile;
 }
 
 export const RESISTANCE_DURATION_MAP: Record<ResistanceLevel, number> = {
